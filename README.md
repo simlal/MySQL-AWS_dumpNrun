@@ -6,19 +6,25 @@ Dump a MySQL RDS database into a Docker container that can be ran for local dev
 
 ### Prerequisites
 
--   [Docker](https://docs.docker.com/get-docker/)
--   [AWS CLI v2](https://docs.aws.amazon.com/cli/latest/userguide/cli-chap-install.html)
--   Previous authentication with AWS CLI and setup to access the RDS instance
--   `.env` file with the following variables:
-    -   `DB_HOST`
-    -   `DB_USER`
-    -   `DB_PASS`
-    -   `DB_NAME`
-    -   `MYSQL_ROOT_PASSWORD`
+- [Docker](https://docs.docker.com/get-docker/)
+- [AWS CLI v2](https://docs.aws.amazon.com/cli/latest/userguide/cli-chap-install.html)
+- Previous authentication with AWS CLI and setup to access the RDS instance
+- `.env` file with the following variables:
+  - `DB_HOST`
+  - `DB_USERNAME`
+  - `DB_PASSWORD`
+  - `DB_NAME`
+  - `MYSQL_ROOT_PASSWORD`
+
+### Use Secret Manager instead
+
+Also possible to use AWS Secret Manager to get your RDS credentials more securily. Pass in a `RDS_SECRET` variable with your secret ARN and aws CLI will replace `DB_USERNAME` and `DB_PASSWORD`
+
+### Before running
 
 Clone the repo and `chmod +x dump-n-run.sh`
 
-### Build-N(or)-Run
+## Build-N(or)-Run
 
 Instructions can be found with `./dump-n-run.sh --help` .
 

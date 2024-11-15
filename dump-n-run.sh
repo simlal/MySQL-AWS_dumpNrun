@@ -16,12 +16,13 @@ function print_help() {
 # Helper for aws-cli installation and configuration
 function validate_aws_and_auth() {
     # Check installation
-    if ! command -v aws > /dev/null 2>&1 ; then
+    if ! command -v aws >/dev/null 2>&1; then
         echo "aws-cli is not installed: https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html"
         exit 1
     fi
     # Check version
-    AWS_MAJ_V=$(aws --version | cut -d / -f2 | awk '{ print $1 }' | cut -b 1
+    AWS_MAJ_V=$(
+        aws --version | cut -d / -f2 | awk '{ print $1 }' | cut -b 1
     )
     if [[ $AWS_MAJ_V -ne '2' ]]; then
         echo "You need aws-cli v2. You are running $(aws --version)"
@@ -29,33 +30,55 @@ function validate_aws_and_auth() {
     fi
 
     # Run aws configure
-        while true; do
-            echo "Running aws configure. Press Ctrl+C to exit."
-            aws configure
-            if [[ $? -eq 0 ]]; then
-                echo "AWS configuration successful."
-                break
-            else
-                echo "AWS configuration failed. Do you want to try again? (y/n)"
-                read -r answer
-                if [[ "$answer" != "y" ]]; then
-                    echo "Exiting."
-                    exit 1
-                fi
+    while true; do
+        echo "Running aws configure. Press Ctrl+C to exit."
+        aws configure
+        if [[ $? -eq 0 ]]; then
+            echo "AWS configuration successful."
+            break
+        else
+            echo "AWS configuration failed. Do you want to try again? (y/n)"
+            read -r answer
+            if [[ "$answer" != "y" ]]; then
+                echo "Exiting."
+                exit 1
             fi
-        done
+        fi
+    done
 }
 
 # Helper to check if container is already running
 function check_remove_container() {
     if [[ $(docker ps -a --format '{{.Names}}' | grep -w $CONTAINER_NAME) ]]; then
-            echo "Container $CONTAINER_NAME already exists. Stopping and removing it."
-            docker stop $CONTAINER_NAME
-            echo "Container $CONTAINER_NAME stopped."
+        echo "Container $CONTAINER_NAME already exists. Stopping and removing it."
+        docker stop $CONTAINER_NAME
+        echo "Container $CONTAINER_NAME stopped."
 
-            docker rm $CONTAINER_NAME
-            echo "Container $CONTAINER_NAME removed."
-        fi
+        docker rm $CONTAINER_NAME
+        echo "Container $CONTAINER_NAME removed."
+    fi
+}
+
+# Use secret if possible
+function use_secret_if_possible() {
+
+    export RDS_SECRET="$RDS_SECRET"
+
+    # Use secrets manager to get the RDS credentials
+    DB_USERNAME=$(aws secretsmanager get-secret-value --secret-id "$RDS_SECRET" --query SecretString --output text | jq .username | sed 's/"//g')
+    DB_PASSWORD=$(aws secretsmanager get-secret-value --secret-id "$RDS_SECRET" --query SecretString --output text | jq .password | sed 's/"//g')
+
+    if [ $? -ne 0 ]; then
+        echo "Failed to get RDS credentials from AWS Secrets Manager."
+        exit 1
+    fi
+
+    echo "RDS credentials retrieved successfully: "
+    echo "Username: $RDS_USERNAME"
+    echo "Password: $(for i in $(seq 1 ${#RDS_PASSWORD}); do echo -n "*"; done)"
+
+    export DB_USERNAME="$DB_USERNAME"
+    export DB_PASSWORD="$DB_PASSWORD"
 }
 
 # Need the following args: IMAGE_NAME, CONTAINER_NAME and weither to only build and/or run the container
@@ -71,29 +94,29 @@ eval set -- "$VALID_ARGS"
 
 while true; do
     case "$1" in
-        -i|--image-name)
-            IMAGE_NAME=$2
-            shift 2
-            ;;
-        -c|--container-name)
-            CONTAINER_NAME=$2
-            shift 2
-            ;;
-        --run-only)
-            RUN_ONLY=true
-            shift
-            ;;
-        --no-cache-build)
-            NO_CACHE_BUILD=true
-            shift
-            ;;
-        -h|--help)
-            print_help
-            ;;
-        --)
-            shift
-            break
-            ;;
+    -i | --image-name)
+        IMAGE_NAME=$2
+        shift 2
+        ;;
+    -c | --container-name)
+        CONTAINER_NAME=$2
+        shift 2
+        ;;
+    --run-only)
+        RUN_ONLY=true
+        shift
+        ;;
+    --no-cache-build)
+        NO_CACHE_BUILD=true
+        shift
+        ;;
+    -h | --help)
+        print_help
+        ;;
+    --)
+        shift
+        break
+        ;;
     esac
 done
 
@@ -134,8 +157,7 @@ if [[ -z $AWS_CREDENTIALS ]]; then
     validate_aws_and_auth
 else
     echo "Found aws credentials! Proceeding to build"
-fi;
-
+fi
 
 # Build the docker image with the secret aws layer and .env secrets
 export DB_HOST=$DB_HOST
@@ -143,14 +165,19 @@ export DB_PASSWORD=$DB_PASSWORD
 export DB_USERNAME=$DB_USERNAME
 export DB_NAME=$DB_NAME
 
+# Override with SECRET MANAGER
+if [ -z "$DB_SECRET" ]; then
+    use_secret_if_possible
+fi
+
 if [[ $NO_CACHE_BUILD ]]; then
     docker build --secret id=aws,src="$AWS_CREDENTIALS" \
-    --secret id=db-host,env=DB_HOST \
-    --secret id=db-password,env=DB_PASSWORD \
-    --secret id=db-username,env=DB_USERNAME \
-    --secret id=db-name,env=DB_NAME \
-    --build-arg MYSQL_ROOT_PASSWORD=$MYSQL_ROOT_PASSWORD \
-    --no-cache -t $IMAGE_NAME .
+        --secret id=db-host,env=DB_HOST \
+        --secret id=db-password,env=DB_PASSWORD \
+        --secret id=db-username,env=DB_USERNAME \
+        --secret id=db-name,env=DB_NAME \
+        --build-arg MYSQL_ROOT_PASSWORD=$MYSQL_ROOT_PASSWORD \
+        --no-cache -t $IMAGE_NAME .
     exit 0
 else
     docker build --secret id=aws,src="$AWS_CREDENTIALS" \
